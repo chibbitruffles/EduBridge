@@ -1,0 +1,209 @@
+// EduBridge Prisma Schema
+// Single shared database for student app and admin dashboard
+// Do not modify database name or delete existing tables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Char(36)
+  email     String   @unique
+  password  String
+  firstName String   @db.VarChar(100)
+  lastName  String   @db.VarChar(100)
+  role      Role     @default(STUDENT)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookmarks      Bookmark[]
+  quizAttempts   QuizAttempt[]
+  notifications  Notification[]
+  refreshTokens  RefreshToken[]
+  materials      LearningMaterial[] @relation("MaterialAuthor")
+  quizzes        Quiz[]             @relation("QuizAuthor")
+
+  @@index([role])
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.Char(36)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  materials LearningMaterial[]
+  quizzes   Quiz[]
+
+  @@index([isActive])
+}
+
+model LearningMaterial {
+  id          String   @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(200)
+  description String?  @db.Text
+  fileUrl     String   @db.VarChar(500)
+  fileName    String   @db.VarChar(255)
+  fileSize    Int      @default(0)
+  mimeType    String   @db.VarChar(100)
+  categoryId  String   @db.Char(36)
+  authorId    String   @db.Char(36)
+  isPublished Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category    Category   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  author      User       @relation("MaterialAuthor", fields: [authorId], references: [id])
+  bookmarks   Bookmark[]
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([isPublished])
+  @@index([isArchived])
+}
+
+model Bookmark {
+  id        String   @id @default(uuid()) @db.Char(36)
+  userId    String   @db.Char(36)
+  materialId String  @db.Char(36)
+  createdAt DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material  LearningMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, materialId])
+  @@index([userId])
+  @@index([materialId])
+}
+
+model Quiz {
+  id          String   @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(200)
+  description String?  @db.Text
+  instructions String? @db.Text
+  categoryId  String   @db.Char(36)
+  authorId    String   @db.Char(36)
+  isPublished Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  timeLimit   Int      @default(0) // minutes, 0 = no limit
+  passingScore Int     @default(60) // percentage
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  author      User     @relation("QuizAuthor", fields: [authorId], references: [id])
+  questions   Question[]
+  attempts    QuizAttempt[]
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([isPublished])
+  @@index([isArchived])
+}
+
+model Question {
+  id          String   @id @default(uuid()) @db.Char(36)
+  quizId      String   @db.Char(36)
+  text        String   @db.Text
+  order       Int      @default(0)
+  points      Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answerOptions AnswerOption[]
+  responses   QuizResponse[]
+
+  @@index([quizId])
+}
+
+model AnswerOption {
+  id        String   @id @default(uuid()) @db.Char(36)
+  questionId String  @db.Char(36)
+  text      String   @db.Text
+  isCorrect Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  responses  QuizResponse[]
+
+  @@index([questionId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Char(36)
+  tokenHash String   @unique @db.VarChar(64)
+  userId    String   @db.Char(36)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model QuizAttempt {
+  id          String     @id @default(uuid()) @db.Char(36)
+  userId      String     @db.Char(36)
+  quizId      String     @db.Char(36)
+  score       Int?       // percentage, null until submitted
+  status      String     @default("in_progress") // in_progress, submitted, graded
+  startedAt   DateTime   @default(now())
+  submittedAt DateTime?
+  completedAt DateTime?
+
+  user   User     @relation(fields: [userId], references: [id])
+  quiz   Quiz     @relation(fields: [quizId], references: [id])
+  responses QuizResponse[]
+
+  @@index([userId])
+  @@index([quizId])
+  @@index([status])
+}
+
+model QuizResponse {
+  id             String   @id @default(uuid()) @db.Char(36)
+  attemptId      String   @db.Char(36)
+  questionId     String   @db.Char(36)
+  answerOptionId String   @db.Char(36)
+  isCorrect      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  attempt    QuizAttempt    @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question   Question       @relation(fields: [questionId], references: [id])
+  answerOption AnswerOption @relation(fields: [answerOptionId], references: [id])
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model Notification {
+  id          String   @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(200)
+  message     String   @db.Text
+  userId      String?  @db.Char(36) // null = broadcast to all students
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
