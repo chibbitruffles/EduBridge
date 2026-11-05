@@ -34,10 +34,10 @@ export const errorHandler = (
     return;
   }
 
-  // Prisma unique constraint violations
+  // Prisma unique constraint violations (P2002 = duplicate/conflict)
   if (err instanceof PrismaClientKnownRequestError) {
     if (err.code === 'P2002') {
-      res.status(400).json({
+      res.status(409).json({
         success: false,
         message: 'A record with this value already exists.',
       });

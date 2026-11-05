@@ -8,6 +8,7 @@ import { healthRouter } from './routes/healthRoutes';
 import { authRouter } from './routes/authRoutes';
 import { categoryRouter } from './routes/categoryRoutes';
 import { materialRouter } from './routes/materialRoutes';
+import { bookmarkRouter } from './routes/bookmarkRoutes';
 
 const app: Application = express();
 
@@ -39,6 +40,9 @@ app.use('/api/v1/categories', categoryRouter);
 
 // Material routes
 app.use('/api/v1/materials', materialRouter);
+
+// Bookmark routes
+app.use('/api/v1/bookmarks', bookmarkRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {
