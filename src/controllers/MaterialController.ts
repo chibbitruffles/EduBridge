@@ -10,6 +10,10 @@ import {
 import { successResponse, errorResponse } from '../utils/response';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { AppErrorClass } from '../middleware/errorHandler';
+import * as fsp from 'fs/promises';
+import * as path from 'path';
+import { createReadStream } from 'fs';
+import { UPLOAD_DIR } from '../config/upload';
 
 /**
  * MaterialController - HTTP handlers for learning material management.
@@ -219,6 +223,172 @@ export class MaterialController {
       const result = await MaterialService.deleteMaterial(id);
 
       successResponse(res, result, 'Material deleted successfully');
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/v1/materials/:id/file
+   * Upload or replace a PDF file for a material.
+   * Access: ADMIN only
+   */
+  static uploadFile = async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const parsed = getMaterialSchema.safeParse({ params: req.params });
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: parsed.error.errors.map((e) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        });
+        return;
+      }
+
+      const { id } = parsed.data.params;
+      const file = (req as any).file as Express.Multer.File | undefined;
+
+      if (!file) {
+        res.status(400).json({
+          success: false,
+          message: 'No file uploaded.',
+        });
+        return;
+      }
+
+      const material = await MaterialService.uploadFile(id, file);
+
+      successResponse(
+        res,
+        material,
+        'File uploaded successfully',
+        201
+      );
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/v1/materials/:id/file
+   * Download the PDF file for a material.
+   * Access: Authenticated (STUDENT + ADMIN)
+   * Students can only download published, non-archived materials.
+   */
+  static downloadFile = async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const parsed = getMaterialSchema.safeParse({ params: req.params });
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: parsed.error.errors.map((e) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        });
+        return;
+      }
+
+      const { id } = parsed.data.params;
+
+      const material = await MaterialService.getFileInfo(
+        id,
+        req.user?.role as 'STUDENT' | 'ADMIN'
+      );
+
+      // Resolve the safe file path
+      const resolvedPath = path.resolve(UPLOAD_DIR, material.fileUrl!);
+      const uploadDirResolved = path.resolve(UPLOAD_DIR);
+
+      // Path traversal prevention
+      if (
+        !resolvedPath.startsWith(uploadDirResolved + path.sep) &&
+        resolvedPath !== uploadDirResolved
+      ) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid file path.',
+        });
+        return;
+      }
+
+      // Check if file exists on disk
+      try {
+        await fsp.access(resolvedPath);
+      } catch {
+        res.status(404).json({
+          success: false,
+          message: 'File not found on server.',
+        });
+        return;
+      }
+
+      // Set response headers
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${material.fileName || 'document.pdf'}"`
+      );
+      res.setHeader('Content-Length', String(material.fileSize || 0));
+
+      // Stream the file
+      const stream = createReadStream(resolvedPath);
+      stream.pipe(res);
+
+      stream.on('error', () => {
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error reading file.',
+          });
+        }
+      });
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
+  /**
+   * DELETE /api/v1/materials/:id/file
+   * Delete the PDF file for a material and clear its metadata.
+   * Access: ADMIN only
+   */
+  static deleteFile = async (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const parsed = getMaterialSchema.safeParse({ params: req.params });
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: parsed.error.errors.map((e) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        });
+        return;
+      }
+
+      const { id } = parsed.data.params;
+
+      const result = await MaterialService.deleteFile(id);
+
+      successResponse(res, result, 'File deleted successfully');
     } catch (error: any) {
       next(error);
     }
