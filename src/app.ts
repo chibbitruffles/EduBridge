@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { healthRouter } from './routes/healthRoutes';
 import { authRouter } from './routes/authRoutes';
 import { categoryRouter } from './routes/categoryRoutes';
+import { materialRouter } from './routes/materialRoutes';
 
 const app: Application = express();
 
@@ -35,6 +36,9 @@ app.use('/api/v1/auth', authRouter);
 
 // Category routes
 app.use('/api/v1/categories', categoryRouter);
+
+// Material routes
+app.use('/api/v1/materials', materialRouter);
 
 // Root endpoint
 app.get('/', (_req: Request, res: Response) => {

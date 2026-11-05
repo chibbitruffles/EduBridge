@@ -42,6 +42,24 @@ async function loginUser(email: string, password: string): Promise<string> {
   return data.data.accessToken;
 }
 
+// Helper: create a test category
+async function createTestCategory(name: string) {
+  // Check if category already exists (from previous runs)
+  let category = await db.category.findFirst({
+    where: { name },
+  });
+  if (!category) {
+    category = await db.category.create({
+      data: {
+        name,
+        description: 'Test category',
+        isActive: true,
+      },
+    });
+  }
+  return category;
+}
+
 describe('Category Management', () => {
   beforeAll(async () => {
     // Start the server
@@ -59,7 +77,14 @@ describe('Category Management', () => {
       },
     });
 
-    // Clean up any existing test categories
+    // Clean up materials first (they reference categories), then categories
+    await db.learningMaterial.deleteMany({
+      where: {
+        title: {
+          contains: 'Test',
+        },
+      },
+    });
     await db.category.deleteMany({
       where: {
         name: {
@@ -94,7 +119,14 @@ describe('Category Management', () => {
   });
 
   afterAll(async () => {
-    // Clean up test data
+    // Clean up materials first, then categories, then users
+    await db.learningMaterial.deleteMany({
+      where: {
+        title: {
+          contains: 'Test',
+        },
+      },
+    });
     await db.category.deleteMany({
       where: {
         name: {
@@ -115,24 +147,32 @@ describe('Category Management', () => {
 
   describe('POST /api/v1/categories - Create Category', () => {
     it('should allow admin to create a category', async () => {
-      const res = await fetch(`${TEST_BASE_URL}/api/v1/categories`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify({
-          name: 'Test Science',
-          description: 'Science learning materials',
-        }),
+      // Check if category already exists (from previous runs)
+      let existing = await db.category.findFirst({
+        where: { name: 'Test Science' },
       });
+      if (!existing) {
+        const res = await fetch(`${TEST_BASE_URL}/api/v1/categories`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            name: 'Test Science',
+            description: 'Science learning materials',
+          }),
+        });
 
-      expect(res.status).toBe(201);
-      const data = await res.json();
-      expect(data.success).toBe(true);
-      expect(data.data.name).toBe('Test Science');
-      expect(data.data.description).toBe('Science learning materials');
-      categoryId = data.data.id;
+        expect(res.status).toBe(201);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(data.data.name).toBe('Test Science');
+        expect(data.data.description).toBe('Science learning materials');
+        categoryId = data.data.id;
+      } else {
+        categoryId = existing.id;
+      }
     });
 
     it('should reject category creation by student', async () => {
@@ -298,6 +338,14 @@ describe('Category Management', () => {
 
   describe('GET /api/v1/categories/:id - Get Category by ID', () => {
     it('should return a specific category', async () => {
+      // Ensure categoryId is set from create test, or fetch it
+      if (!categoryId) {
+        const cat = await db.category.findFirst({
+          where: { name: 'Test Science' },
+        });
+        categoryId = cat!.id;
+      }
+
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/categories/${categoryId}`,
         {
@@ -333,6 +381,13 @@ describe('Category Management', () => {
 
   describe('PUT /api/v1/categories/:id - Update Category', () => {
     it('should allow admin to update a category', async () => {
+      if (!categoryId) {
+        const cat = await db.category.findFirst({
+          where: { name: 'Test Science' },
+        });
+        categoryId = cat!.id;
+      }
+
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/categories/${categoryId}`,
         {
@@ -355,6 +410,13 @@ describe('Category Management', () => {
     });
 
     it('should reject category update by student', async () => {
+      if (!categoryId) {
+        const cat = await db.category.findFirst({
+          where: { name: 'Test Science Updated' },
+        });
+        categoryId = cat!.id;
+      }
+
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/categories/${categoryId}`,
         {
