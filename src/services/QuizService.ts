@@ -879,13 +879,14 @@ export class QuizService {
    * Expired attempts are automatically finalized before rejecting new submissions.
    */
   static async submitAnswers(
+    quizId: string,
     attemptId: string,
     userId: string,
     answers: Array<{ questionId: string; answerOptionId: string }>
   ) {
-    // Check attempt exists and belongs to user
+    // Check attempt exists, belongs to user, and is in the specified quiz
     const attempt = await db.quizAttempt.findFirst({
-      where: { id: attemptId, userId },
+      where: { id: attemptId, userId, quizId },
       select: {
         id: true,
         quizId: true,

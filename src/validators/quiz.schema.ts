@@ -220,3 +220,96 @@ export const updateAnswerOptionSchema = z.object({
       .optional(),
   }),
 });
+
+/**
+ * Schema for starting a quiz attempt (STUDENT only).
+ */
+export const startAttemptSchema = z.object({
+  params: z.object({
+    quizId: z.string().min(1, 'Quiz ID is required'),
+  }),
+});
+
+/**
+ * Schema for submitting answers (STUDENT only).
+ */
+export const submitAnswersSchema = z.object({
+  params: z.object({
+    quizId: z.string().min(1, 'Quiz ID is required'),
+    attemptId: z.string().min(1, 'Attempt ID is required'),
+  }),
+  body: z.object({
+    answers: z
+      .array(
+        z.object({
+          questionId: z.string().min(1, 'Question ID is required'),
+          answerOptionId: z.string().min(1, 'Answer option ID is required'),
+        })
+      )
+      .optional()
+      .default([]),
+  }),
+});
+
+/**
+ * Schema for completing/submitting an attempt (STUDENT only).
+ */
+export const submitAttemptSchema = z.object({
+  params: z.object({
+    quizId: z.string().min(1, 'Quiz ID is required'),
+    attemptId: z.string().min(1, 'Attempt ID is required'),
+  }),
+});
+
+/**
+ * Schema for getting an attempt by ID (STUDENT only).
+ */
+export const getAttemptSchema = z.object({
+  params: z.object({
+    quizId: z.string().min(1, 'Quiz ID is required'),
+    attemptId: z.string().min(1, 'Attempt ID is required'),
+  }),
+});
+
+/**
+ * Schema for listing attempts for a quiz (STUDENT only).
+ */
+export const listQuizAttemptsSchema = z.object({
+  params: z.object({
+    quizId: z.string().min(1, 'Quiz ID is required'),
+  }),
+  query: z.object({
+    page: z
+      .string()
+      .optional()
+      .default('1')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => !isNaN(val) && val > 0, 'Page must be a positive integer'),
+    limit: z
+      .string()
+      .optional()
+      .default('10')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => !isNaN(val) && val > 0, 'Limit must be a positive integer'),
+  }),
+});
+
+/**
+ * Schema for listing all attempts by the authenticated student.
+ */
+export const listUserAttemptsSchema = z.object({
+  query: z.object({
+    page: z
+      .string()
+      .optional()
+      .default('1')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => !isNaN(val) && val > 0, 'Page must be a positive integer'),
+    limit: z
+      .string()
+      .optional()
+      .default('10')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => !isNaN(val) && val > 0, 'Limit must be a positive integer'),
+  }),
+});

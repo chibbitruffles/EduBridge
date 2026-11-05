@@ -1688,6 +1688,37 @@ describe('Quiz Management API', () => {
       await db.question.delete({ where: { id: otherQuestion.id } });
       await db.quiz.delete({ where: { id: otherQuiz.id } });
     });
+
+    it('should reject submitting answers with mismatched quiz ID', async () => {
+      const otherQuiz = await db.quiz.create({
+        data: {
+          title: `Test Quiz Mismatched ${TEST_SUFFIX}`,
+          description: 'Other quiz for mismatch test',
+          categoryId,
+          authorId: adminId,
+          isPublished: true,
+          isArchived: false,
+        },
+      });
+
+      const res = await fetch(
+        `${TEST_BASE_URL}/api/v1/quizzes/${otherQuiz.id}/attempts/${attemptWithAnswersId}/answers`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${studentToken}`,
+          },
+          body: JSON.stringify({
+            answers: [{ questionId: questionIdForAnswers, answerOptionId: optionId1 }],
+          }),
+        }
+      );
+
+      expect(res.status).toBe(404);
+
+      await db.quiz.delete({ where: { id: otherQuiz.id } });
+    });
   });
 
   describe('PUT /api/v1/quizzes/:quizId/attempts/:attemptId/submit - Complete Attempt', () => {
@@ -1880,6 +1911,48 @@ describe('Quiz Management API', () => {
       );
 
       expect(res.status).toBe(409);
+    });
+
+    it('should reject completing attempt with mismatched quiz ID', async () => {
+      // Submit answers first
+      await fetch(
+        `${TEST_BASE_URL}/api/v1/quizzes/${quizWithAttemptId}/attempts/${attemptWithAttemptId}/answers`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${studentToken}`,
+          },
+          body: JSON.stringify({
+            answers: [{ questionId: questionIdForComplete, answerOptionId: optionCorrectId }],
+          }),
+        }
+      );
+
+      const otherQuiz = await db.quiz.create({
+        data: {
+          title: `Test Quiz Mismatch Complete ${TEST_SUFFIX}`,
+          description: 'Other quiz for mismatch test',
+          categoryId,
+          authorId: adminId,
+          isPublished: true,
+          isArchived: false,
+        },
+      });
+
+      const res = await fetch(
+        `${TEST_BASE_URL}/api/v1/quizzes/${otherQuiz.id}/attempts/${attemptWithAttemptId}/submit`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${studentToken}`,
+          },
+        }
+      );
+
+      expect(res.status).toBe(404);
+
+      await db.quiz.delete({ where: { id: otherQuiz.id } });
     });
   });
 
