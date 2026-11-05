@@ -715,4 +715,665 @@ export class QuizService {
 
     return { message: 'Answer option deleted successfully' };
   }
+
+  /**
+   * Start a new quiz attempt (STUDENT only).
+   * Validates that the quiz exists, is published, not archived,
+   * has at least one question, and every question has exactly one correct answer.
+   */
+  static async startAttempt(
+    quizId: string,
+    userId: string
+  ) {
+    // Check if quiz exists and is published and not archived
+    const quiz = await db.quiz.findUnique({
+      where: { id: quizId },
+      select: {
+        id: true,
+        title: true,
+        isPublished: true,
+        isArchived: true,
+        timeLimit: true,
+        passingScore: true,
+        questions: {
+          select: {
+            id: true,
+            answerOptions: {
+              select: {
+                id: true,
+                isCorrect: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!quiz) {
+      throw new AppErrorClass('Quiz not found', 404);
+    }
+
+    if (!quiz.isPublished || quiz.isArchived) {
+      throw new AppErrorClass('Quiz is not available for attempts', 403);
+    }
+
+    if (quiz.questions.length === 0) {
+      throw new AppErrorClass('Quiz has no questions', 409);
+    }
+
+    // Validate every question has exactly one correct answer
+    for (const question of quiz.questions) {
+      const correctCount = question.answerOptions.filter(
+        (o) => o.isCorrect
+      ).length;
+
+      if (correctCount === 0) {
+        throw new AppErrorClass(
+          `Question ${question.id} has no correct answer`,
+          409
+        );
+      }
+
+      if (correctCount > 1) {
+        throw new AppErrorClass(
+          `Question ${question.id} has multiple correct answers`,
+          409
+        );
+      }
+    }
+
+    // Check time limit - if expired, we can't start a new attempt
+    if (quiz.timeLimit > 0) {
+      // timeLimit is in minutes
+    }
+
+    const attempt = await db.quizAttempt.create({
+      data: {
+        quizId,
+        userId,
+        status: 'in_progress',
+        startedAt: new Date(),
+      },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        score: true,
+        status: true,
+        startedAt: true,
+        submittedAt: true,
+        completedAt: true,
+      },
+    });
+
+    return attempt;
+  }
+
+  /**
+   * Get an attempt by ID (STUDENT only).
+   * Returns attempt details with questions and answer options (without correct answers).
+   * Also includes existing responses for in-progress attempts.
+   */
+  static async getAttempt(
+    attemptId: string,
+    userId: string
+  ) {
+    const attempt = await db.quizAttempt.findFirst({
+      where: {
+        id: attemptId,
+        userId,
+      },
+      include: {
+        quiz: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            isPublished: true,
+            isArchived: true,
+            timeLimit: true,
+            passingScore: true,
+            questions: {
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                quizId: true,
+                text: true,
+                order: true,
+                points: true,
+                answerOptions: {
+                  select: {
+                    id: true,
+                    questionId: true,
+                    text: true,
+                    order: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          select: {
+            id: true,
+            questionId: true,
+            answerOptionId: true,
+            isCorrect: true,
+          },
+        },
+      },
+    });
+
+    if (!attempt) {
+      throw new AppErrorClass('Attempt not found', 404);
+    }
+
+    return attempt;
+  }
+
+  /**
+   * Submit or update answers for an attempt (STUDENT only).
+   * Validates that the attempt exists, belongs to the user, and is in_progress.
+   * Validates that each answer option belongs to its question.
+   * Uses upsert to maintain one response per question.
+   * Expired attempts are automatically finalized before rejecting new submissions.
+   */
+  static async submitAnswers(
+    attemptId: string,
+    userId: string,
+    answers: Array<{ questionId: string; answerOptionId: string }>
+  ) {
+    // Check attempt exists and belongs to user
+    const attempt = await db.quizAttempt.findFirst({
+      where: { id: attemptId, userId },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        status: true,
+        startedAt: true,
+      },
+    });
+
+    if (!attempt) {
+      throw new AppErrorClass('Attempt not found', 404);
+    }
+
+    if (attempt.status !== 'in_progress') {
+      throw new AppErrorClass('Attempt is not in progress', 409);
+    }
+
+    // Check time limit
+    const quiz = await db.quiz.findUnique({
+      where: { id: attempt.quizId },
+      select: {
+        id: true,
+        timeLimit: true,
+      },
+    });
+
+    if (!quiz) {
+      throw new AppErrorClass('Quiz not found', 404);
+    }
+
+    if (quiz.timeLimit > 0 && attempt.startedAt) {
+      const now = new Date();
+      const elapsedMinutes = (now.getTime() - attempt.startedAt.getTime()) / (1000 * 60);
+      if (elapsedMinutes > quiz.timeLimit) {
+        // Auto-finalize the attempt using saved answers, then reject new submissions
+        await this.finalizeAttempt(attemptId, userId, now);
+        throw new AppErrorClass(
+          'Time limit exceeded. Attempt has been automatically submitted.',
+          409
+        );
+      }
+    }
+
+    // Validate each answer option belongs to its question
+    const questionIds = answers.map((a) => a.questionId);
+    const questions = await db.question.findMany({
+      where: {
+        id: { in: questionIds },
+        quizId: attempt.quizId,
+      },
+      select: {
+        id: true,
+        quizId: true,
+      },
+    });
+
+    const questionIdSet = new Set(questions.map((q) => q.id));
+
+    for (const answer of answers) {
+      if (!questionIdSet.has(answer.questionId)) {
+        throw new AppErrorClass(
+          `Question ${answer.questionId} does not belong to this quiz`,
+          400
+        );
+      }
+
+      const answerOption = await db.answerOption.findUnique({
+        where: { id: answer.answerOptionId },
+        select: {
+          id: true,
+          questionId: true,
+        },
+      });
+
+      if (!answerOption || answerOption.questionId !== answer.questionId) {
+        throw new AppErrorClass(
+          `Answer option ${answer.answerOptionId} does not belong to question ${answer.questionId}`,
+          400
+        );
+      }
+    }
+
+    // Upsert responses in transaction
+    await db.$transaction(
+      answers.map((answer) =>
+        db.quizResponse.upsert({
+          where: {
+            attemptId_questionId: {
+              attemptId,
+              questionId: answer.questionId,
+            },
+          },
+          update: {
+            answerOptionId: answer.answerOptionId,
+            isCorrect: undefined, // will be calculated on submit
+          },
+          create: {
+            attemptId,
+            questionId: answer.questionId,
+            answerOptionId: answer.answerOptionId,
+            isCorrect: false, // will be calculated on submit
+          },
+        })
+      )
+    );
+
+    return { message: 'Answers submitted successfully' };
+  }
+
+  /**
+   * Internal helper to finalize an attempt atomically.
+   * Uses a conditional update to prevent concurrent duplicate submissions.
+   * Only one request can successfully transition an attempt from 'in_progress' to 'submitted'.
+   */
+  static async finalizeAttempt(
+    attemptId: string,
+    userId: string,
+    now?: Date
+  ) {
+    const finalizedAt = now ?? new Date();
+
+    // Fetch attempt data needed for scoring
+    const attempt = await db.quizAttempt.findFirst({
+      where: { id: attemptId, userId },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        status: true,
+        startedAt: true,
+      },
+    });
+
+    if (!attempt) {
+      throw new AppErrorClass('Attempt not found', 404);
+    }
+
+    await db.$transaction(async (tx) => {
+      // Calculate score inside the transaction for consistency
+      const questions = await tx.question.findMany({
+        where: { quizId: attempt.quizId },
+        select: {
+          id: true,
+          points: true,
+          answerOptions: {
+            select: {
+              id: true,
+              isCorrect: true,
+            },
+          },
+        },
+      });
+
+      const responses = await tx.quizResponse.findMany({
+        where: { attemptId },
+        select: {
+          id: true,
+          questionId: true,
+          answerOptionId: true,
+        },
+      });
+
+      let earnedPoints = 0;
+      let totalPoints = 0;
+
+      for (const question of questions) {
+        totalPoints += question.points;
+        const response = responses.find((r) => r.questionId === question.id);
+
+        if (response && response.answerOptionId) {
+          const answerOption = question.answerOptions.find(
+            (o) => o.id === response.answerOptionId
+          );
+          if (answerOption && answerOption.isCorrect) {
+            earnedPoints += question.points;
+          }
+        }
+      }
+
+      const score = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+
+      // Atomic conditional update: only succeeds if attempt is still 'in_progress'
+      // This prevents concurrent duplicate submissions at the database level
+      const result = await tx.quizAttempt.updateMany({
+        where: { id: attemptId, userId, status: 'in_progress' },
+        data: {
+          score,
+          status: 'submitted',
+          submittedAt: finalizedAt,
+          completedAt: finalizedAt,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new AppErrorClass('Attempt is not in progress', 409);
+      }
+    });
+
+    return {
+      attemptId,
+      score: 0, // score is set in DB; caller re-fetches if needed
+      quizId: attempt.quizId,
+    };
+  }
+
+  /**
+   * Complete an attempt and calculate score (STUDENT only).
+   * Validates attempt exists, belongs to user, and is in_progress.
+   * Calculates score based on correct answers.
+   * Uses transaction for atomicity.
+   * Expired attempts are automatically finalized using saved answers.
+   */
+  static async completeAttempt(
+    attemptId: string,
+    userId: string
+  ) {
+    const attempt = await db.quizAttempt.findFirst({
+      where: { id: attemptId, userId },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        status: true,
+        startedAt: true,
+      },
+    });
+
+    if (!attempt) {
+      throw new AppErrorClass('Attempt not found', 404);
+    }
+
+    // Check time limit for expiration
+    const quiz = await db.quiz.findUnique({
+      where: { id: attempt.quizId },
+      select: {
+        id: true,
+        timeLimit: true,
+      },
+    });
+
+    if (!quiz) {
+      throw new AppErrorClass('Quiz not found', 404);
+    }
+
+    const now = new Date();
+    let isExpired = false;
+
+    if (quiz.timeLimit > 0 && attempt.startedAt) {
+      const elapsedMinutes = (now.getTime() - attempt.startedAt.getTime()) / (1000 * 60);
+      if (elapsedMinutes > quiz.timeLimit) {
+        isExpired = true;
+      }
+    }
+
+    // If expired and already submitted, it was already finalized - return success
+    if (isExpired && attempt.status === 'submitted') {
+      const updated = await db.quizAttempt.findUnique({
+        where: { id: attemptId },
+        select: {
+          score: true,
+          quiz: {
+            select: {
+              passingScore: true,
+            },
+          },
+        },
+      });
+      const score = updated?.score ?? 0;
+      const passingScore = updated?.quiz?.passingScore ?? 60;
+      return {
+        attemptId,
+        score,
+        quizId: attempt.quizId,
+        passingScore,
+        passed: score !== null && score >= passingScore,
+        autoFinalized: true,
+      };
+    }
+
+    // If not expired and not in_progress, reject
+    if (!isExpired && attempt.status !== 'in_progress') {
+      throw new AppErrorClass('Attempt is not in progress', 409);
+    }
+
+    // If expired but already submitted (not in_progress), reject
+    if (isExpired && attempt.status !== 'in_progress') {
+      throw new AppErrorClass('Attempt has already been submitted', 409);
+    }
+
+    // Auto-finalize using saved answers (handles both normal completion and expiration)
+    await this.finalizeAttempt(attemptId, userId, now);
+
+    // Re-fetch the score and passing score from the database
+    const updated = await db.quizAttempt.findUnique({
+      where: { id: attemptId },
+      select: {
+        score: true,
+        quiz: {
+          select: {
+            passingScore: true,
+          },
+        },
+      },
+    });
+
+    const score = updated?.score ?? 0;
+    const passingScore = updated?.quiz?.passingScore ?? 60;
+
+    return {
+      attemptId,
+      score,
+      quizId: attempt.quizId,
+      passingScore,
+      passed: score !== null && score >= passingScore,
+      autoFinalized: isExpired,
+    };
+  }
+
+  /**
+   * Get all attempts for a specific quiz by the authenticated student.
+   */
+  static async getAttemptHistoryByQuiz(
+    quizId: string,
+    userId: string
+  ) {
+    // Verify quiz exists before listing attempts
+    const quiz = await db.quiz.findUnique({
+      where: { id: quizId },
+      select: { id: true },
+    });
+
+    if (!quiz) {
+      throw new AppErrorClass('Quiz not found', 404);
+    }
+
+    const attempts = await db.quizAttempt.findMany({
+      where: {
+        quizId,
+        userId,
+      },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        score: true,
+        status: true,
+        startedAt: true,
+        submittedAt: true,
+        completedAt: true,
+      },
+    });
+
+    return attempts;
+  }
+
+  /**
+   * Get all attempts for the authenticated student across all quizzes.
+   */
+  static async getAttemptHistoryByUser(userId: string) {
+    const attempts = await db.quizAttempt.findMany({
+      where: {
+        userId,
+      },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        score: true,
+        status: true,
+        startedAt: true,
+        submittedAt: true,
+        completedAt: true,
+        quiz: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    return attempts;
+  }
+
+  /**
+   * Get attempt result with score and pass/fail determination (STUDENT only).
+   * Returns score and whether the student passed.
+   */
+  static async getAttemptResult(
+    attemptId: string,
+    userId: string
+  ) {
+    const attempt = await db.quizAttempt.findFirst({
+      where: { id: attemptId, userId },
+      select: {
+        id: true,
+        quizId: true,
+        userId: true,
+        score: true,
+        status: true,
+        startedAt: true,
+        submittedAt: true,
+        completedAt: true,
+        quiz: {
+          select: {
+            id: true,
+            title: true,
+            passingScore: true,
+            questions: {
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                text: true,
+                order: true,
+                points: true,
+                answerOptions: {
+                  select: {
+                    id: true,
+                    text: true,
+                    isCorrect: true, // exposed after submission
+                    order: true,
+                  },
+                  orderBy: { order: 'asc' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          select: {
+            id: true,
+            questionId: true,
+            answerOptionId: true,
+            isCorrect: true,
+          },
+        },
+      },
+    });
+
+    if (!attempt) {
+      throw new AppErrorClass('Attempt not found', 404);
+    }
+
+    if (attempt.status !== 'submitted') {
+      throw new AppErrorClass('Attempt has not been submitted', 409);
+    }
+
+    const passed = attempt.score !== null && attempt.score >= attempt.quiz.passingScore;
+
+    // Build question details with selected answer and correct answer
+    const questionResults = attempt.quiz.questions.map((question) => {
+      const response = attempt.responses.find((r) => r.questionId === question.id);
+      const selectedOptionId = response?.answerOptionId ?? null;
+      const selectedOption = question.answerOptions.find((o) => o.id === selectedOptionId);
+      const correctOption = question.answerOptions.find((o) => o.isCorrect);
+
+      return {
+        questionId: question.id,
+        questionText: question.text,
+        points: question.points,
+        selectedAnswer: selectedOption
+          ? {
+              id: selectedOption.id,
+              text: selectedOption.text,
+              isCorrect: selectedOption.isCorrect,
+            }
+          : null,
+        correctAnswer: {
+          id: correctOption!.id,
+          text: correctOption!.text,
+        },
+      };
+    });
+
+    return {
+      attemptId: attempt.id,
+      quizId: attempt.quizId,
+      quizTitle: attempt.quiz.title,
+      score: attempt.score,
+      passingScore: attempt.quiz.passingScore,
+      passed,
+      status: attempt.status,
+      startedAt: attempt.startedAt,
+      submittedAt: attempt.submittedAt,
+      completedAt: attempt.completedAt,
+      questions: questionResults,
+    };
+  }
 }

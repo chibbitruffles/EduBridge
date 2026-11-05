@@ -146,4 +146,76 @@ router.delete(
   asyncHandler(QuizController.deleteAnswerOption)
 );
 
+/**
+ * @route   POST /api/v1/quizzes/:quizId/attempts
+ * @desc    Start a new quiz attempt
+ * @access  STUDENT only
+ */
+router.post(
+  '/:quizId/attempts',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.startAttempt)
+);
+
+/**
+ * @route   GET /api/v1/quizzes/:quizId/attempts
+ * @desc    List attempts for a specific quiz by the authenticated student
+ * @access  STUDENT only
+ */
+router.get(
+  '/:quizId/attempts',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.listAttemptsByQuiz)
+);
+
+/**
+ * @route   GET /api/v1/quizzes/:quizId/attempts/:attemptId
+ * @desc    Get a specific attempt by ID
+ * @access  STUDENT only
+ */
+router.get(
+  '/:quizId/attempts/:attemptId',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.getAttempt)
+);
+
+/**
+ * @route   POST /api/v1/quizzes/:quizId/attempts/:attemptId/answers
+ * @desc    Submit answers for an attempt
+ * @access  STUDENT only
+ */
+router.post(
+  '/:quizId/attempts/:attemptId/answers',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.submitAnswers)
+);
+
+/**
+ * @route   PUT /api/v1/quizzes/:quizId/attempts/:attemptId/submit
+ * @desc    Complete an attempt and calculate score
+ * @access  STUDENT only
+ */
+router.put(
+  '/:quizId/attempts/:attemptId/submit',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.completeAttempt)
+);
+
+/**
+ * @route   GET /api/v1/quizzes/:quizId/attempts/:attemptId/result
+ * @desc    Get attempt result with score and pass/fail
+ * @access  STUDENT only
+ */
+router.get(
+  '/:quizId/attempts/:attemptId/result',
+  authenticate,
+  authorize('STUDENT'),
+  asyncHandler(QuizController.getAttemptResult)
+);
+
 export { router as quizRouter };
