@@ -10,6 +10,7 @@ import { categoryRouter } from './routes/categoryRoutes';
 import { materialRouter } from './routes/materialRoutes';
 import { bookmarkRouter } from './routes/bookmarkRoutes';
 import { attemptRouter } from './routes/attemptRoutes';
+import { notificationRouter } from './routes/notificationRoutes';
 import { quizRouter } from './routes/quizRoutes';
 
 const app: Application = express();
@@ -48,6 +49,9 @@ app.use('/api/v1/bookmarks', bookmarkRouter);
 
 // Attempt routes (mounted at /api/v1 for GET /api/v1/attempts)
 app.use('/api/v1', attemptRouter);
+
+// Notification routes
+app.use('/api/v1/notifications', notificationRouter);
 
 // Quiz routes
 app.use('/api/v1/quizzes', quizRouter);
