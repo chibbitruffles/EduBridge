@@ -70,16 +70,8 @@ describe('Category Management', () => {
     // Wait for server to be ready
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Clean up any existing test users
-    await db.user.deleteMany({
-      where: {
-        email: {
-          contains: 'testcategory',
-        },
-      },
-    });
-
-    // Clean up materials first (they reference categories), then categories
+    // Clean up materials first (they reference categories), then categories,
+    // then users (materials reference their author)
     await db.learningMaterial.deleteMany({
       where: {
         title: {
@@ -91,6 +83,13 @@ describe('Category Management', () => {
       where: {
         name: {
           contains: `Test Category ${TEST_SUFFIX}`,
+        },
+      },
+    });
+    await db.user.deleteMany({
+      where: {
+        email: {
+          contains: 'testcategory',
         },
       },
     });
