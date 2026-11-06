@@ -104,11 +104,19 @@ describe('Learning Materials Management', () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     await db.learningMaterial.deleteMany({
-      where: { title: { contains: 'Test Material' } },
+      where: { title: { contains: `Test Material ${TEST_SUFFIX}` } },
     });
-    await db.category.deleteMany({
-      where: { name: { contains: 'Test' } },
+    // Clean up users and their authored materials (foreign-key-safe)
+    const testUsers = await db.user.findMany({
+      where: { email: { contains: 'testmaterial' } },
+      select: { id: true },
     });
+    const testUserIds = testUsers.map((u) => u.id);
+    if (testUserIds.length > 0) {
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+    }
     await db.user.deleteMany({
       where: { email: { contains: 'testmaterial' } },
     });
@@ -127,12 +135,12 @@ describe('Learning Materials Management', () => {
     adminId = admin.id;
 
     let category = await db.category.findFirst({
-      where: { name: 'Test Science' },
+      where: { name: `Test Science ${TEST_SUFFIX}` },
     });
     if (!category) {
       category = await db.category.create({
         data: {
-          name: 'Test Science',
+          name: `Test Science ${TEST_SUFFIX}`,
           description: 'Test category',
           isActive: true,
         },
@@ -165,14 +173,36 @@ describe('Learning Materials Management', () => {
   });
 
   afterAll(async () => {
+    // Clean up test data (foreign-key-safe order)
     await db.learningMaterial.deleteMany({
-      where: { title: { contains: 'Test Material' } },
+      where: {
+        title: {
+          contains: `Test Material ${TEST_SUFFIX}`,
+        },
+      },
     });
+    // Clean up users and their authored materials
+    const testUsers = await db.user.findMany({
+      where: { email: { contains: 'testmaterial' } },
+      select: { id: true },
+    });
+    const testUserIds = testUsers.map((u) => u.id);
+    if (testUserIds.length > 0) {
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+    }
     await db.category.deleteMany({
-      where: { name: { contains: 'Test' } },
+      where: {
+        name: `Test Science ${TEST_SUFFIX}`,
+      },
     });
     await db.user.deleteMany({
-      where: { email: { contains: 'testmaterial' } },
+      where: {
+        email: {
+          contains: 'testmaterial',
+        },
+      },
     });
     await db.$disconnect();
     server.close();

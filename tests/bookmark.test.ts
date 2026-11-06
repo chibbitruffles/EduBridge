@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import app from '../src/app';
-import { db } from '../src/config/db';
-import { hashPassword } from '../src/utils/hash';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import app from "../src/app";
+import { db } from "../src/config/db";
+import { hashPassword } from "../src/utils/hash";
 
-const TEST_BASE_URL = 'http://localhost:3003';
+const TEST_BASE_URL = "http://localhost:3003";
 
 let server: ReturnType<typeof app.listen>;
 let adminToken: string;
@@ -20,15 +20,15 @@ const TEST_SUFFIX = Date.now().toString();
 async function createTestUser(
   email: string,
   password: string,
-  role: 'STUDENT' | 'ADMIN'
+  role: "STUDENT" | "ADMIN",
 ) {
   const hashedPassword = await hashPassword(password);
   const user = await db.user.create({
     data: {
       email,
       password: hashedPassword,
-      firstName: role === 'ADMIN' ? 'Admin' : 'Student',
-      lastName: 'User',
+      firstName: role === "ADMIN" ? "Admin" : "Student",
+      lastName: "User",
       role,
       isActive: true,
     },
@@ -38,8 +38,8 @@ async function createTestUser(
 
 async function loginUser(email: string, password: string): Promise<string> {
   const res = await fetch(`${TEST_BASE_URL}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
   const data = await res.json();
@@ -49,71 +49,75 @@ async function loginUser(email: string, password: string): Promise<string> {
 async function createTestMaterial(
   title: string,
   isPublished: boolean,
-  isArchived: boolean
+  isArchived: boolean,
 ) {
   return await db.learningMaterial.create({
     data: {
       title,
-      description: 'Test material description',
+      description: "Test material description",
       categoryId,
       authorId: adminId,
       isPublished,
       isArchived,
-      fileUrl: '',
-      fileName: '',
+      fileUrl: "",
+      fileName: "",
       fileSize: 0,
-      mimeType: '',
+      mimeType: "",
     },
   });
 }
 
-describe('Bookmarks API', () => {
+describe("Bookmarks API", () => {
   beforeAll(async () => {
     server = app.listen(3003);
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Clean up test data
-    await db.bookmark.deleteMany({
+    // Clean up test data from previous runs (foreign-key-safe order)
+    const testUsers = await db.user.findMany({
       where: {
-        material: {
-          title: {
-            contains: 'Test Material',
-          },
-        },
+        email: { contains: "testbookmark" },
       },
+      select: { id: true },
     });
-    await db.learningMaterial.deleteMany({
-      where: {
-        title: {
-          contains: 'Test Material',
+    const testUserIds = testUsers.map((u) => u.id);
+
+    if (testUserIds.length > 0) {
+      await db.bookmark.deleteMany({
+        where: {
+          OR: [
+            { userId: { in: testUserIds } },
+            { material: { authorId: { in: testUserIds } } },
+          ],
         },
-      },
-    });
+      });
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+      await db.quiz.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+    }
     await db.category.deleteMany({
       where: {
-        name: {
-          contains: 'Test',
-        },
+        name: `Test Bookmark Category ${TEST_SUFFIX}`,
       },
     });
     await db.user.deleteMany({
       where: {
-        email: {
-          contains: 'testbookmark',
-        },
+        email: { contains: "testbookmark" },
       },
     });
 
     // Create admin and student users
     const admin = await createTestUser(
-      'admin.testbookmark@example.com',
-      'AdminPass123!',
-      'ADMIN'
+      "admin.testbookmark@example.com",
+      "AdminPass123!",
+      "ADMIN",
     );
     const student = await createTestUser(
-      'student.testbookmark@example.com',
-      'StudentPass123!',
-      'STUDENT'
+      "student.testbookmark@example.com",
+      "StudentPass123!",
+      "STUDENT",
     );
 
     adminId = admin.id;
@@ -121,13 +125,13 @@ describe('Bookmarks API', () => {
 
     // Create a test category
     let category = await db.category.findFirst({
-      where: { name: 'Test Science' },
+      where: { name: `Test Bookmark Category ${TEST_SUFFIX}` },
     });
     if (!category) {
       category = await db.category.create({
         data: {
-          name: 'Test Science',
-          description: 'Test category',
+          name: `Test Bookmark Category ${TEST_SUFFIX}`,
+          description: "Test category",
           isActive: true,
         },
       });
@@ -136,78 +140,83 @@ describe('Bookmarks API', () => {
 
     // Login to get tokens
     adminToken = await loginUser(
-      'admin.testbookmark@example.com',
-      'AdminPass123!'
+      "admin.testbookmark@example.com",
+      "AdminPass123!",
     );
     studentToken = await loginUser(
-      'student.testbookmark@example.com',
-      'StudentPass123!'
+      "student.testbookmark@example.com",
+      "StudentPass123!",
     );
 
     // Create test materials
     const published = await createTestMaterial(
       `Test Material Published ${TEST_SUFFIX}`,
       true,
-      false
+      false,
     );
     publishedMaterialId = published.id;
 
     const unpublished = await createTestMaterial(
       `Test Material Unpublished ${TEST_SUFFIX}`,
       false,
-      false
+      false,
     );
     unpublishedMaterialId = unpublished.id;
 
     const archived = await createTestMaterial(
       `Test Material Archived ${TEST_SUFFIX}`,
       true,
-      true
+      true,
     );
     archivedMaterialId = archived.id;
   });
 
   afterAll(async () => {
-    await db.bookmark.deleteMany({
+    // Clean up test data (foreign-key-safe order)
+    const testUsers = await db.user.findMany({
       where: {
-        material: {
-          title: {
-            contains: 'Test Material',
-          },
-        },
+        email: { contains: "testbookmark" },
       },
+      select: { id: true },
     });
-    await db.learningMaterial.deleteMany({
-      where: {
-        title: {
-          contains: 'Test Material',
+    const testUserIds = testUsers.map((u) => u.id);
+
+    if (testUserIds.length > 0) {
+      await db.bookmark.deleteMany({
+        where: {
+          OR: [
+            { userId: { in: testUserIds } },
+            { material: { authorId: { in: testUserIds } } },
+          ],
         },
-      },
-    });
+      });
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+      await db.quiz.deleteMany({
+        where: { authorId: { in: testUserIds } },
+      });
+    }
     await db.category.deleteMany({
       where: {
-        name: {
-          contains: 'Test',
-        },
+        name: `Test Bookmark Category ${TEST_SUFFIX}`,
       },
     });
     await db.user.deleteMany({
       where: {
-        email: {
-          contains: 'testbookmark',
-        },
+        email: { contains: "testbookmark" },
       },
     });
     await db.$disconnect();
     server.close();
   });
 
-  describe('POST /api/v1/bookmarks - Create Bookmark', () => {
-    it('should allow student to create a bookmark', async () => {
+  describe("POST /api/v1/bookmarks - Create Bookmark", () => {
+    it("should allow student to create a bookmark", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -222,11 +231,11 @@ describe('Bookmarks API', () => {
       expect(data.data.material.id).toBe(publishedMaterialId);
     });
 
-    it('should reject bookmark creation by unauthenticated user', async () => {
+    it("should reject bookmark creation by unauthenticated user", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           materialId: publishedMaterialId,
@@ -236,11 +245,11 @@ describe('Bookmarks API', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should reject bookmark creation by admin', async () => {
+    it("should reject bookmark creation by admin", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
@@ -251,11 +260,11 @@ describe('Bookmarks API', () => {
       expect(res.status).toBe(403);
     });
 
-    it('should reject bookmarking unpublished material', async () => {
+    it("should reject bookmarking unpublished material", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -266,11 +275,11 @@ describe('Bookmarks API', () => {
       expect(res.status).toBe(404);
     });
 
-    it('should reject bookmarking archived material', async () => {
+    it("should reject bookmarking archived material", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -281,27 +290,27 @@ describe('Bookmarks API', () => {
       expect(res.status).toBe(404);
     });
 
-    it('should reject bookmarking nonexistent material', async () => {
+    it("should reject bookmarking nonexistent material", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
-          materialId: '00000000-0000-0000-0000-000000000000',
+          materialId: "00000000-0000-0000-0000-000000000000",
         }),
       });
 
       expect(res.status).toBe(404);
     });
 
-    it('should prevent duplicate bookmark creation (409)', async () => {
+    it("should prevent duplicate bookmark creation (409)", async () => {
       // Create a bookmark first
       await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -311,9 +320,9 @@ describe('Bookmarks API', () => {
 
       // Try to create again
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -326,11 +335,11 @@ describe('Bookmarks API', () => {
       expect(data.success).toBe(false);
     });
 
-    it('should reject invalid request (missing materialId)', async () => {
+    it("should reject invalid request (missing materialId)", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({}),
@@ -340,16 +349,28 @@ describe('Bookmarks API', () => {
     });
   });
 
-  describe('GET /api/v1/bookmarks - List Bookmarks', () => {
+  describe("GET /api/v1/bookmarks - List Bookmarks", () => {
     beforeEach(async () => {
       // Create additional materials and bookmarks for pagination tests
       const materials = [
-        { title: `Test Material Math ${TEST_SUFFIX}`, isPublished: true, isArchived: false },
-        { title: `Test Material English ${TEST_SUFFIX}`, isPublished: true, isArchived: false },
+        {
+          title: `Test Material Math ${TEST_SUFFIX}`,
+          isPublished: true,
+          isArchived: false,
+        },
+        {
+          title: `Test Material English ${TEST_SUFFIX}`,
+          isPublished: true,
+          isArchived: false,
+        },
       ];
 
       for (const mat of materials) {
-        const m = await createTestMaterial(mat.title, mat.isPublished, mat.isArchived);
+        const m = await createTestMaterial(
+          mat.title,
+          mat.isPublished,
+          mat.isArchived,
+        );
         await db.bookmark.create({
           data: {
             userId: studentId,
@@ -359,15 +380,15 @@ describe('Bookmarks API', () => {
       }
     });
 
-    it('should list student bookmarks with pagination', async () => {
+    it("should list student bookmarks with pagination", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks?page=1&limit=2`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(200);
@@ -380,18 +401,18 @@ describe('Bookmarks API', () => {
       expect(data.data.data.length).toBeLessThanOrEqual(2);
     });
 
-    it('should return only the authenticated student bookmarks', async () => {
+    it("should return only the authenticated student bookmarks", async () => {
       // Create another student and their bookmark
       const otherStudent = await createTestUser(
         `other.student.testbookmark${TEST_SUFFIX}@example.com`,
-        'StudentPass123!',
-        'STUDENT'
+        "StudentPass123!",
+        "STUDENT",
       );
 
       const otherMaterial = await createTestMaterial(
         `Test Material Other Student ${TEST_SUFFIX}`,
         true,
-        false
+        false,
       );
       await db.bookmark.create({
         data: {
@@ -401,7 +422,7 @@ describe('Bookmarks API', () => {
       });
 
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'GET',
+        method: "GET",
         headers: {
           Authorization: `Bearer ${studentToken}`,
         },
@@ -416,9 +437,9 @@ describe('Bookmarks API', () => {
       }
     });
 
-    it('should sort bookmarks newest first', async () => {
+    it("should sort bookmarks newest first", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'GET',
+        method: "GET",
         headers: {
           Authorization: `Bearer ${studentToken}`,
         },
@@ -429,36 +450,36 @@ describe('Bookmarks API', () => {
       expect(data.success).toBe(true);
       const bookmarks = data.data.data;
       for (let i = 1; i < bookmarks.length; i++) {
-        expect(new Date(bookmarks[i - 1].createdAt).getTime()).toBeGreaterThanOrEqual(
-          new Date(bookmarks[i].createdAt).getTime()
-        );
+        expect(
+          new Date(bookmarks[i - 1].createdAt).getTime(),
+        ).toBeGreaterThanOrEqual(new Date(bookmarks[i].createdAt).getTime());
       }
     });
 
-    it('should reject unauthenticated list requests', async () => {
+    it("should reject unauthenticated list requests", async () => {
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'GET',
+        method: "GET",
       });
 
       expect(res.status).toBe(401);
     });
 
-    it('should reject invalid pagination parameters', async () => {
+    it("should reject invalid pagination parameters", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks?page=0&limit=0`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(400);
     });
   });
 
-  describe('GET /api/v1/bookmarks/:id - Get Bookmark by ID', () => {
+  describe("GET /api/v1/bookmarks/:id - Get Bookmark by ID", () => {
     let bookmarkId: string;
 
     beforeEach(async () => {
@@ -471,9 +492,9 @@ describe('Bookmarks API', () => {
       });
       // Create a bookmark for the student
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -485,15 +506,15 @@ describe('Bookmarks API', () => {
       bookmarkId = data.data.id;
     });
 
-    it('should return a specific bookmark owned by the student', async () => {
+    it("should return a specific bookmark owned by the student", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${bookmarkId}`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(200);
@@ -502,17 +523,17 @@ describe('Bookmarks API', () => {
       expect(data.data.id).toBe(bookmarkId);
     });
 
-    it('should return 404 for another student bookmark', async () => {
+    it("should return 404 for another student bookmark", async () => {
       // Create another student and their bookmark
       const otherStudent = await createTestUser(
         `other2.student.testbookmark${TEST_SUFFIX}@example.com`,
-        'StudentPass123!',
-        'STUDENT'
+        "StudentPass123!",
+        "STUDENT",
       );
       const otherMaterial = await createTestMaterial(
         `Test Material Other2 ${TEST_SUFFIX}`,
         true,
-        false
+        false,
       );
       const otherBookmark = await db.bookmark.create({
         data: {
@@ -524,43 +545,43 @@ describe('Bookmarks API', () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${otherBookmark.id}`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(404);
     });
 
-    it('should return 404 for nonexistent bookmark', async () => {
+    it("should return 404 for nonexistent bookmark", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/00000000-0000-0000-0000-000000000000`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(404);
     });
 
-    it('should reject unauthenticated get by ID', async () => {
+    it("should reject unauthenticated get by ID", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${bookmarkId}`,
         {
-          method: 'GET',
-        }
+          method: "GET",
+        },
       );
 
       expect(res.status).toBe(401);
     });
   });
 
-  describe('DELETE /api/v1/bookmarks/:id - Delete Bookmark', () => {
+  describe("DELETE /api/v1/bookmarks/:id - Delete Bookmark", () => {
     let bookmarkToDeleteId: string;
 
     beforeEach(async () => {
@@ -573,9 +594,9 @@ describe('Bookmarks API', () => {
       });
       // Create a bookmark for deletion testing
       const res = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -587,45 +608,45 @@ describe('Bookmarks API', () => {
       bookmarkToDeleteId = data.data.id;
     });
 
-    it('should allow student to delete their own bookmark', async () => {
+    it("should allow student to delete their own bookmark", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${bookmarkToDeleteId}`,
         {
-          method: 'DELETE',
+          method: "DELETE",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.success).toBe(true);
-      expect(data.message).toContain('deleted');
+      expect(data.message).toContain("deleted");
     });
 
-    it('should not delete the learning material when deleting a bookmark', async () => {
+    it("should not delete the learning material when deleting a bookmark", async () => {
       // Create a separate material for this test
       const mat = await db.learningMaterial.create({
         data: {
           title: `Test Material Bookmark Preserve ${TEST_SUFFIX}`,
-          description: 'Material for bookmark delete test',
+          description: "Material for bookmark delete test",
           categoryId,
           authorId: adminId,
           isPublished: true,
           isArchived: false,
-          fileUrl: '',
-          fileName: '',
+          fileUrl: "",
+          fileName: "",
           fileSize: 0,
-          mimeType: '',
+          mimeType: "",
         },
       });
 
       // Create a bookmark on this material
       const bookmarkRes = await fetch(`${TEST_BASE_URL}/api/v1/bookmarks`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
@@ -636,25 +657,22 @@ describe('Bookmarks API', () => {
       const bmId = bookmarkData.data.id;
 
       // Delete the bookmark
-      await fetch(
-        `${TEST_BASE_URL}/api/v1/bookmarks/${bmId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${studentToken}`,
-          },
-        }
-      );
+      await fetch(`${TEST_BASE_URL}/api/v1/bookmarks/${bmId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${studentToken}`,
+        },
+      });
 
       // Verify material still exists
       const materialRes = await fetch(
         `${TEST_BASE_URL}/api/v1/materials/${mat.id}`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(materialRes.status).toBe(200);
@@ -663,17 +681,17 @@ describe('Bookmarks API', () => {
       await db.learningMaterial.delete({ where: { id: mat.id } });
     });
 
-    it('should reject deletion of another student bookmark', async () => {
+    it("should reject deletion of another student bookmark", async () => {
       // Create another student and their bookmark
       const otherStudent = await createTestUser(
         `other3.student.testbookmark${TEST_SUFFIX}@example.com`,
-        'StudentPass123!',
-        'STUDENT'
+        "StudentPass123!",
+        "STUDENT",
       );
       const otherMaterial = await createTestMaterial(
         `Test Material Other3 ${TEST_SUFFIX}`,
         true,
-        false
+        false,
       );
       const otherBookmark = await db.bookmark.create({
         data: {
@@ -685,36 +703,36 @@ describe('Bookmarks API', () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${otherBookmark.id}`,
         {
-          method: 'DELETE',
+          method: "DELETE",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(404);
     });
 
-    it('should return 404 for deleting nonexistent bookmark', async () => {
+    it("should return 404 for deleting nonexistent bookmark", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/00000000-0000-0000-0000-000000000000`,
         {
-          method: 'DELETE',
+          method: "DELETE",
           headers: {
             Authorization: `Bearer ${studentToken}`,
           },
-        }
+        },
       );
 
       expect(res.status).toBe(404);
     });
 
-    it('should reject unauthenticated delete', async () => {
+    it("should reject unauthenticated delete", async () => {
       const res = await fetch(
         `${TEST_BASE_URL}/api/v1/bookmarks/${bookmarkToDeleteId}`,
         {
-          method: 'DELETE',
-        }
+          method: "DELETE",
+        },
       );
 
       expect(res.status).toBe(401);

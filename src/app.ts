@@ -11,6 +11,7 @@ import { materialRouter } from './routes/materialRoutes';
 import { bookmarkRouter } from './routes/bookmarkRoutes';
 import { attemptRouter } from './routes/attemptRoutes';
 import { notificationRouter } from './routes/notificationRoutes';
+import { dashboardRouter } from './routes/dashboardRoutes';
 import { quizRouter } from './routes/quizRoutes';
 
 const app: Application = express();
@@ -52,6 +53,9 @@ app.use('/api/v1', attemptRouter);
 
 // Notification routes
 app.use('/api/v1/notifications', notificationRouter);
+
+// Dashboard routes
+app.use('/api/v1/dashboard', dashboardRouter);
 
 // Quiz routes
 app.use('/api/v1/quizzes', quizRouter);

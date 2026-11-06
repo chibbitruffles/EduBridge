@@ -48,58 +48,49 @@ describe('Quiz Management API', () => {
     server = app.listen(3004);
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    await db.quizResponse.deleteMany({
-      where: {
-        question: {
-          quiz: {
-            title: {
-              contains: 'Test Quiz',
+    // Clean up all quiz-related data authored by test users (foreign-key-safe, by authorId)
+    const quizTestUsers = await db.user.findMany({
+      where: { email: { contains: 'testquiz' } },
+      select: { id: true },
+    });
+    const quizTestUserIds = quizTestUsers.map((u) => u.id);
+    if (quizTestUserIds.length > 0) {
+      await db.quizResponse.deleteMany({
+        where: {
+          attempt: {
+            userId: { in: quizTestUserIds },
+          },
+        },
+      });
+      await db.quizAttempt.deleteMany({
+        where: { userId: { in: quizTestUserIds } },
+      });
+      await db.answerOption.deleteMany({
+        where: {
+          question: {
+            quiz: {
+              authorId: { in: quizTestUserIds },
             },
           },
         },
-      },
-    });
-    await db.quizAttempt.deleteMany({
-      where: {
-        quiz: {
-          title: {
-            contains: 'Test Quiz',
-          },
-        },
-      },
-    });
-    await db.answerOption.deleteMany({
-      where: {
-        question: {
+      });
+      await db.question.deleteMany({
+        where: {
           quiz: {
-            title: {
-              contains: 'Test Quiz',
-            },
+            authorId: { in: quizTestUserIds },
           },
         },
-      },
-    });
-    await db.question.deleteMany({
-      where: {
-        quiz: {
-          title: {
-            contains: 'Test Quiz',
-          },
-        },
-      },
-    });
-    await db.quiz.deleteMany({
-      where: {
-        title: {
-          contains: 'Test Quiz',
-        },
-      },
-    });
+      });
+      await db.quiz.deleteMany({
+        where: { authorId: { in: quizTestUserIds } },
+      });
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: quizTestUserIds } },
+      });
+    }
     await db.category.deleteMany({
       where: {
-        name: {
-          contains: 'Test',
-        },
+        name: `Test Science ${TEST_SUFFIX}`,
       },
     });
     await db.user.deleteMany({
@@ -125,12 +116,12 @@ describe('Quiz Management API', () => {
     studentId = student.id;
 
     let category = await db.category.findFirst({
-      where: { name: 'Test Science' },
+      where: { name: `Test Science ${TEST_SUFFIX}` },
     });
     if (!category) {
       category = await db.category.create({
         data: {
-          name: 'Test Science',
+          name: `Test Science ${TEST_SUFFIX}`,
           description: 'Test category',
           isActive: true,
         },
@@ -149,58 +140,49 @@ describe('Quiz Management API', () => {
   });
 
   afterAll(async () => {
-    await db.quizResponse.deleteMany({
-      where: {
-        question: {
-          quiz: {
-            title: {
-              contains: 'Test Quiz',
+    // Clean up all quiz-related data authored by test users (foreign-key-safe, by authorId)
+    const quizTestUsers = await db.user.findMany({
+      where: { email: { contains: 'testquiz' } },
+      select: { id: true },
+    });
+    const quizTestUserIds = quizTestUsers.map((u) => u.id);
+    if (quizTestUserIds.length > 0) {
+      await db.quizResponse.deleteMany({
+        where: {
+          attempt: {
+            userId: { in: quizTestUserIds },
+          },
+        },
+      });
+      await db.quizAttempt.deleteMany({
+        where: { userId: { in: quizTestUserIds } },
+      });
+      await db.answerOption.deleteMany({
+        where: {
+          question: {
+            quiz: {
+              authorId: { in: quizTestUserIds },
             },
           },
         },
-      },
-    });
-    await db.quizAttempt.deleteMany({
-      where: {
-        quiz: {
-          title: {
-            contains: 'Test Quiz',
-          },
-        },
-      },
-    });
-    await db.answerOption.deleteMany({
-      where: {
-        question: {
+      });
+      await db.question.deleteMany({
+        where: {
           quiz: {
-            title: {
-              contains: 'Test Quiz',
-            },
+            authorId: { in: quizTestUserIds },
           },
         },
-      },
-    });
-    await db.question.deleteMany({
-      where: {
-        quiz: {
-          title: {
-            contains: 'Test Quiz',
-          },
-        },
-      },
-    });
-    await db.quiz.deleteMany({
-      where: {
-        title: {
-          contains: 'Test Quiz',
-        },
-      },
-    });
+      });
+      await db.quiz.deleteMany({
+        where: { authorId: { in: quizTestUserIds } },
+      });
+      await db.learningMaterial.deleteMany({
+        where: { authorId: { in: quizTestUserIds } },
+      });
+    }
     await db.category.deleteMany({
       where: {
-        name: {
-          contains: 'Test',
-        },
+        name: `Test Science ${TEST_SUFFIX}`,
       },
     });
     await db.user.deleteMany({
@@ -341,7 +323,7 @@ describe('Quiz Management API', () => {
       await db.quiz.deleteMany({
         where: {
           title: {
-            contains: 'Test Quiz',
+            contains: 'Test Quiz ${TEST_SUFFIX}',
           },
         },
       });

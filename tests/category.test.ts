@@ -5,6 +5,8 @@ import { hashPassword } from '../src/utils/hash';
 
 const TEST_BASE_URL = 'http://localhost:3001';
 
+const TEST_SUFFIX = Date.now().toString();
+
 let server: ReturnType<typeof app.listen>;
 let adminToken: string;
 let studentToken: string;
@@ -81,14 +83,14 @@ describe('Category Management', () => {
     await db.learningMaterial.deleteMany({
       where: {
         title: {
-          contains: 'Test',
+          contains: `Test Material ${TEST_SUFFIX}`,
         },
       },
     });
     await db.category.deleteMany({
       where: {
         name: {
-          contains: 'Test',
+          contains: `Test Category ${TEST_SUFFIX}`,
         },
       },
     });
@@ -123,14 +125,14 @@ describe('Category Management', () => {
     await db.learningMaterial.deleteMany({
       where: {
         title: {
-          contains: 'Test',
+          contains: `Test Material ${TEST_SUFFIX}`,
         },
       },
     });
     await db.category.deleteMany({
       where: {
         name: {
-          contains: 'Test',
+          contains: `Test Category ${TEST_SUFFIX}`,
         },
       },
     });
@@ -149,7 +151,7 @@ describe('Category Management', () => {
     it('should allow admin to create a category', async () => {
       // Check if category already exists (from previous runs)
       let existing = await db.category.findFirst({
-        where: { name: 'Test Science' },
+        where: { name: `Test Category ${TEST_SUFFIX} Science` },
       });
       if (!existing) {
         const res = await fetch(`${TEST_BASE_URL}/api/v1/categories`, {
@@ -159,7 +161,7 @@ describe('Category Management', () => {
             Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify({
-            name: 'Test Science',
+            name: `Test Category ${TEST_SUFFIX} Science`,
             description: 'Science learning materials',
           }),
         });
@@ -167,7 +169,7 @@ describe('Category Management', () => {
         expect(res.status).toBe(201);
         const data = await res.json();
         expect(data.success).toBe(true);
-        expect(data.data.name).toBe('Test Science');
+        expect(data.data.name).toBe(`Test Category ${TEST_SUFFIX} Science`);
         expect(data.data.description).toBe('Science learning materials');
         categoryId = data.data.id;
       } else {
@@ -183,7 +185,7 @@ describe('Category Management', () => {
           Authorization: `Bearer ${studentToken}`,
         },
         body: JSON.stringify({
-          name: 'Test Math',
+          name: `Test Category ${TEST_SUFFIX} Math`,
           description: 'Math learning materials',
         }),
       });
@@ -201,7 +203,7 @@ describe('Category Management', () => {
           Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
-          name: 'Test Science',
+          name: `Test Category ${TEST_SUFFIX} Science`,
           description: 'Duplicate science category',
         }),
       });
@@ -236,7 +238,7 @@ describe('Category Management', () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: 'Test History',
+          name: `Test Category ${TEST_SUFFIX} History`,
           description: 'History materials',
         }),
       });
@@ -250,17 +252,17 @@ describe('Category Management', () => {
       // Create additional categories for pagination/search tests
       const testCategories = [
         {
-          name: 'Test Mathematics',
+          name: `Test Category ${TEST_SUFFIX} Mathematics`,
           description: 'Math category',
           isActive: true,
         },
         {
-          name: 'Test English',
+          name: `Test Category ${TEST_SUFFIX} English`,
           description: 'English category',
           isActive: true,
         },
         {
-          name: 'Test History',
+          name: `Test Category ${TEST_SUFFIX} History`,
           description: 'History category',
           isActive: true,
         },
@@ -341,7 +343,7 @@ describe('Category Management', () => {
       // Ensure categoryId is set from create test, or fetch it
       if (!categoryId) {
         const cat = await db.category.findFirst({
-          where: { name: 'Test Science' },
+          where: { name: `Test Category ${TEST_SUFFIX} Science` },
         });
         categoryId = cat!.id;
       }
@@ -383,7 +385,7 @@ describe('Category Management', () => {
     it('should allow admin to update a category', async () => {
       if (!categoryId) {
         const cat = await db.category.findFirst({
-          where: { name: 'Test Science' },
+          where: { name: `Test Category ${TEST_SUFFIX} Science` },
         });
         categoryId = cat!.id;
       }
@@ -397,7 +399,7 @@ describe('Category Management', () => {
             Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify({
-            name: 'Test Science Updated',
+            name: `Test Category ${TEST_SUFFIX} Science Updated`,
             description: 'Updated science description',
           }),
         }
@@ -406,13 +408,13 @@ describe('Category Management', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.success).toBe(true);
-      expect(data.data.name).toBe('Test Science Updated');
+      expect(data.data.name).toBe(`Test Category ${TEST_SUFFIX} Science Updated`);
     });
 
     it('should reject category update by student', async () => {
       if (!categoryId) {
         const cat = await db.category.findFirst({
-          where: { name: 'Test Science Updated' },
+          where: { name: `Test Category ${TEST_SUFFIX} Science Updated` },
         });
         categoryId = cat!.id;
       }
@@ -463,7 +465,7 @@ describe('Category Management', () => {
           Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
-          name: 'Test To Delete',
+          name: `Test Category ${TEST_SUFFIX} To Delete`,
           description: 'Category to be deleted',
         }),
       });
@@ -495,7 +497,7 @@ describe('Category Management', () => {
           Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
-          name: 'Test Student Delete',
+          name: `Test Category ${TEST_SUFFIX} Student Delete`,
           description: 'Student delete test',
         }),
       });
@@ -526,7 +528,7 @@ describe('Category Management', () => {
             Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify({
-            name: 'Test With Materials',
+            name: `Test Category ${TEST_SUFFIX} With Materials`,
             description: 'Has materials',
           }),
         }
@@ -537,7 +539,7 @@ describe('Category Management', () => {
       // Create a material associated with this category
       await db.learningMaterial.create({
         data: {
-          title: 'Test Material',
+          title: `Test Material ${TEST_SUFFIX}`,
           fileUrl: '/uploads/test.pdf',
           fileName: 'test.pdf',
           fileSize: 1024,
